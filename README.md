@@ -15,22 +15,28 @@ context.
 ## Authentication
 
 Public GitLab resources work without authentication. For private projects,
-configure one of the following in **Settings → GitLab Embeds**:
+pick **one** authentication method per instance in **Settings → GitLab Embeds**:
 
-### Personal access token (recommended)
+### None (default)
 
-1. Go to your GitLab instance → **Preferences → Access Tokens**.
-2. Create a token with the **read_api** scope (or **api**).
-3. Paste the token into the plugin settings for the matching instance.
-4. Click **Test** to verify the connection.
+Use for public issues and merge requests. No credentials required.
+
+### Personal access token
+
+1. Set **Authentication** to **Personal access token**.
+2. Go to your GitLab instance → **Preferences → Access Tokens**.
+3. Create a token with the **read_api** scope (or **api**).
+4. Paste the token and click **Test** to verify.
 
 Tokens are stored in Obsidian's secret storage, not in plain settings.
 
-### OAuth (optional)
+### OAuth
 
-Configure a GitLab OAuth application with redirect URI `obsidian://gitlab-embeds`,
-then enter the Client ID (and Client Secret if required) and click **Authorize**.
-If both a PAT and OAuth are configured, the PAT is used first.
+1. Set **Authentication** to **OAuth**.
+2. Create a GitLab OAuth application with redirect URI `obsidian://gitlab-embeds`.
+3. Enter the Client ID and Client Secret (if required), then click **Authorize**.
+
+Only one method is active per instance. Switching methods clears the other.
 
 ## Disclaimer
 

@@ -1,14 +1,21 @@
 import { Notice, Plugin } from "obsidian";
 import {
+  AuthMethod,
   DEFAULT_SETTINGS,
   GitLabPluginSettings,
   GitLabSettingTab,
+  normalizeBaseUrl,
 } from "./settings";
-import { GitLabAPIClient, GitLabApiError, Issue } from "./api-client";
+import {
+  GitLabAPIClient,
+  GitLabApiError,
+  Issue,
+  MergeRequest,
+} from "./api-client";
 
 enum GitLabResource {
   ISSUE = "issues",
-  MERGE_REQUEST = "merge_request",
+  MERGE_REQUEST = "merge_requests",
 }
 
 type BaseEmbedOptions = {
@@ -35,8 +42,10 @@ export default class GitLabPlugin extends Plugin {
       const code = data.code as string;
       const state = data.state as string;
 
-      // Find the instance that initiated this - for now assume first instance with clientId
-      const instance = this.settings.instances.find((i) => i.clientId);
+      // Find the instance that initiated this OAuth flow
+      const instance = this.settings.instances.find(
+        (i) => i.authMethod === AuthMethod.OAuth && i.clientId,
+      );
       const baseUrl = instance?.baseUrl;
       const client = baseUrl ? this.clients[baseUrl] : undefined;
       if (client && code && state) {
@@ -64,6 +73,28 @@ export default class GitLabPlugin extends Plugin {
       DEFAULT_SETTINGS,
       (await this.loadData()) as Partial<GitLabPluginSettings>,
     );
+    this.settings.instances = this.settings.instances.map((instance) => {
+      const baseUrl = normalizeBaseUrl(instance.baseUrl);
+      let authMethod = instance.authMethod;
+
+      if (!authMethod) {
+        const patKey = `pat-${baseUrl.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+        const pat = this.app.secretStorage.getSecret(patKey);
+        if (pat && pat.length > 0) {
+          authMethod = AuthMethod.Pat;
+        } else if (instance.clientId) {
+          authMethod = AuthMethod.OAuth;
+        } else {
+          authMethod = AuthMethod.None;
+        }
+      }
+
+      return {
+        ...instance,
+        baseUrl,
+        authMethod,
+      };
+    });
   }
 
   async saveSettings() {
@@ -77,6 +108,7 @@ export default class GitLabPlugin extends Plugin {
         (this.clients[instance.baseUrl] = new GitLabAPIClient({
           baseURL: instance.baseUrl,
           plugin: this,
+          authMethod: instance.authMethod ?? AuthMethod.None,
           clientId: instance.clientId,
           clientSecret: instance.clientSecret,
         })),
@@ -93,37 +125,37 @@ export default class GitLabPlugin extends Plugin {
       // GitLab URL.
       return;
     }
-    const embedParentElement = anchorElement.parentElement as HTMLElement;
-
     const client = this.getRelevantAPIClient(url.baseURL);
     if (!client) return;
 
-    switch (url.resource) {
-      case GitLabResource.ISSUE: {
-        try {
+    try {
+      switch (url.resource) {
+        case GitLabResource.ISSUE: {
           const issue = await client.getProjectIssue(
             url.getProjectId(),
             url.id,
           );
-          this.renderIssueEmbed(embedParentElement, issue);
-        } catch (e) {
-          if (
-            e instanceof GitLabApiError &&
-            (e.status === 401 || e.status === 403)
-          ) {
-            new Notice(
-              "GitLab embed: authentication required. Add a PAT or authorize OAuth in settings.",
-              8000,
-            );
-          }
+          this.renderIssueEmbed(anchorElement, issue);
+          break;
         }
-        break;
+        case GitLabResource.MERGE_REQUEST: {
+          const mergeRequest = await client.getProjectMergeRequest(
+            url.getProjectId(),
+            url.id,
+          );
+          this.renderMergeRequestEmbed(anchorElement, mergeRequest);
+          break;
+        }
       }
-      case GitLabResource.MERGE_REQUEST: {
-        break;
-      }
-      default: {
-        break;
+    } catch (e) {
+      if (
+        e instanceof GitLabApiError &&
+        (e.status === 401 || e.status === 403)
+      ) {
+        new Notice(
+          "GitLab embed: configure authentication (PAT or OAuth) in settings.",
+          8000,
+        );
       }
     }
   }
@@ -166,12 +198,31 @@ export default class GitLabPlugin extends Plugin {
   }
 
   /**
-   * Renders an issue embed.
-   * @param element - The parent element
-   * @param url - The GitLab URL to the issue
+   * Renders an issue embed, replacing the original markdown link.
    */
-  private renderIssueEmbed(element: HTMLElement, issue: Issue): void {
-    const embedElement = this.renderBaseEmbed(element, {
+  private renderIssueEmbed(
+    anchorElement: HTMLAnchorElement,
+    issue: Issue,
+  ): void {
+    const container = document.createElement("div");
+    const embedElement = this.buildIssueEmbed(container, issue);
+    anchorElement.replaceWith(embedElement);
+  }
+
+  /**
+   * Renders a merge request embed, replacing the original markdown link.
+   */
+  private renderMergeRequestEmbed(
+    anchorElement: HTMLAnchorElement,
+    mergeRequest: MergeRequest,
+  ): void {
+    const container = document.createElement("div");
+    const embedElement = this.buildMergeRequestEmbed(container, mergeRequest);
+    anchorElement.replaceWith(embedElement);
+  }
+
+  private buildIssueEmbed(container: HTMLElement, issue: Issue): HTMLElement {
+    const embedElement = this.renderBaseEmbed(container, {
       href: issue.webUrl,
       clses: ["gitlab-issue"],
     });
@@ -205,14 +256,9 @@ export default class GitLabPlugin extends Plugin {
     authorAvatarElement.src = issue.author.avatarUrl;
     authorElement.appendText(issue.author.username);
 
-    const date = new Date(issue.createdAt);
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, "0"); // months are 0-indexed
-    const dd = String(date.getDate()).padStart(2, "0");
-
     // Date element
     detailsElement.createEl("div", {
-      text: `${yyyy}-${mm}-${dd}`,
+      text: formatDate(issue.createdAt),
       cls: "gitlab-date",
     });
 
@@ -226,6 +272,68 @@ export default class GitLabPlugin extends Plugin {
         cls: "gitlab-label",
       }),
     );
+
+    return embedElement;
+  }
+
+  private buildMergeRequestEmbed(
+    container: HTMLElement,
+    mergeRequest: MergeRequest,
+  ): HTMLElement {
+    const embedElement = this.renderBaseEmbed(container, {
+      href: mergeRequest.webUrl,
+      clses: ["gitlab-merge-request"],
+    });
+
+    const baseUrls = this.settings.instances.map((i) => i.baseUrl);
+    const { group, project } = new GitLabURL(mergeRequest.webUrl, baseUrls);
+    embedElement.createEl("div", {
+      text: `${group}/${project}`,
+      cls: "gitlab-repo",
+    });
+
+    const headingElement = embedElement.createEl("div", {
+      cls: "gitlab-heading",
+    });
+    headingElement.createEl("span", {
+      text: "!" + mergeRequest.iid + " ",
+      cls: "gitlab-identifier",
+    });
+    headingElement.appendText(mergeRequest.title);
+
+    const detailsElement = embedElement.createDiv({ cls: "gitlab-details" });
+
+    const authorElement = detailsElement.createEl("div", {
+      cls: "gitlab-author",
+    });
+    const authorAvatarElement = authorElement.createEl("img", {
+      cls: "gitlab-author-avatar",
+    });
+    authorAvatarElement.src = mergeRequest.author.avatarUrl;
+    authorElement.appendText(mergeRequest.author.username);
+
+    detailsElement.createEl("div", {
+      text: `${mergeRequest.sourceBranch} → ${mergeRequest.targetBranch}`,
+      cls: "gitlab-date",
+    });
+
+    detailsElement.createEl("div", {
+      text: formatDate(mergeRequest.createdAt),
+      cls: "gitlab-date",
+    });
+
+    const labelsElement = detailsElement.createEl("div", {
+      cls: "gitlab-labels",
+    });
+
+    mergeRequest.labels.slice(0, 3).forEach((label) =>
+      labelsElement.createEl("div", {
+        text: ellipsize(label, 20),
+        cls: "gitlab-label",
+      }),
+    );
+
+    return embedElement;
   }
 }
 
@@ -244,8 +352,15 @@ const ellipsize = (str: string, count: number): string => {
 
   const ellipses = "...";
 
-  // Truncate text and append ellipses to meet the desired length.
   return str.slice(0, count - ellipses.length).trimEnd() + ellipses;
+};
+
+const formatDate = (isoDate: string): string => {
+  const date = new Date(isoDate);
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 };
 
 class GitLabURL {
@@ -257,7 +372,10 @@ class GitLabURL {
   id: string;
 
   constructor(url: string, validBaseURLs: string[]) {
-    const baseURL = validBaseURLs.find((b) => url.startsWith(b));
+    const normalizedValidBaseURLs = validBaseURLs.map(normalizeBaseUrl);
+    const baseURL = normalizedValidBaseURLs.find((b) =>
+      normalizeBaseUrl(url).startsWith(b),
+    );
     if (!baseURL)
       throw new TypeError(
         "URL does not match any configured GitLab instances: " + url,

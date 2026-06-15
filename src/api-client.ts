@@ -1,9 +1,11 @@
 import { Plugin, requestUrl } from "obsidian";
 import AuthService from "./auth-service";
+import { AuthMethod } from "./settings";
 
 type GitLabAPIClientOptions = {
   baseURL: string;
   plugin: Plugin;
+  authMethod: AuthMethod;
   clientId?: string;
   clientSecret?: string;
 };
@@ -23,14 +25,16 @@ export class GitLabAPIClient {
   private instanceBaseURL: string;
   private baseURL: string;
   private plugin: Plugin;
+  private authMethod: AuthMethod;
   private authService: AuthService | null = null;
 
   constructor(options: GitLabAPIClientOptions) {
     this.instanceBaseURL = options.baseURL;
     this.baseURL = options.baseURL + "/api";
     this.plugin = options.plugin;
+    this.authMethod = options.authMethod;
 
-    if (options.clientId) {
+    if (options.authMethod === AuthMethod.OAuth && options.clientId) {
       this.authService = new AuthService(
         options.plugin,
         options.baseURL,
@@ -99,14 +103,19 @@ export class GitLabAPIClient {
   }
 
   private async resolveAuthHeaders(): Promise<Record<string, string>> {
-    const pat = this.getPat();
-    if (pat) {
-      return { "PRIVATE-TOKEN": pat };
+    if (this.authMethod === AuthMethod.Pat) {
+      const pat = this.getPat();
+      if (pat) {
+        return { "PRIVATE-TOKEN": pat };
+      }
+      return {};
     }
 
-    const oauth = await this.getValidToken();
-    if (oauth) {
-      return { Authorization: `Bearer ${oauth}` };
+    if (this.authMethod === AuthMethod.OAuth) {
+      const oauth = await this.getValidToken();
+      if (oauth) {
+        return { Authorization: `Bearer ${oauth}` };
+      }
     }
 
     return {};
@@ -148,6 +157,13 @@ export class GitLabAPIClient {
       `projects/${id}/issues/${issueIid}`,
     );
     return issueMapper(data);
+  }
+
+  async getProjectMergeRequest(id: string, mergeRequestIid: string) {
+    const data = await this.request<_APIMergeRequest>(
+      `projects/${id}/merge_requests/${mergeRequestIid}`,
+    );
+    return mergeRequestMapper(data);
   }
 }
 
@@ -239,6 +255,89 @@ function issueMapper(data: _APIIssue): Issue {
     upvotes: data.upvotes,
     downvotes: data.downvotes,
     confidential: data.confidential,
+    webUrl: data.web_url,
+  };
+}
+
+type _APIMergeRequest = {
+  id: number;
+  iid: number;
+  project_id: number;
+  title: string;
+  description: string;
+  state: string;
+  created_at: string;
+  updated_at: string;
+  merged_at: string | null;
+  closed_at: string | null;
+  source_branch: string;
+  target_branch: string;
+  labels: string[];
+  author: {
+    id: number;
+    username: string;
+    public_email: string;
+    name: string;
+    state: string;
+    locked: boolean;
+    avatar_url: string;
+    web_url: string;
+  };
+  web_url: string;
+};
+
+export type MergeRequest = {
+  id: number;
+  iid: number;
+  projectId: number;
+  title: string;
+  description: string;
+  state: string;
+  createdAt: string;
+  updatedAt: string;
+  mergedAt: string | undefined;
+  closedAt: string | undefined;
+  sourceBranch: string;
+  targetBranch: string;
+  labels: string[];
+  author: {
+    id: number;
+    publicEmail: string;
+    username: string;
+    name: string;
+    state: string;
+    locked: boolean;
+    avatarUrl: string;
+    webUrl: string;
+  };
+  webUrl: string;
+};
+
+function mergeRequestMapper(data: _APIMergeRequest): MergeRequest {
+  return {
+    id: data.id,
+    iid: data.iid,
+    projectId: data.project_id,
+    title: data.title,
+    description: data.description,
+    state: data.state,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+    mergedAt: data.merged_at || undefined,
+    closedAt: data.closed_at || undefined,
+    sourceBranch: data.source_branch,
+    targetBranch: data.target_branch,
+    labels: data.labels,
+    author: {
+      id: data.author.id,
+      publicEmail: data.author.public_email,
+      username: data.author.username,
+      name: data.author.name,
+      state: data.author.state,
+      locked: data.author.locked,
+      avatarUrl: data.author.avatar_url,
+      webUrl: data.author.web_url,
+    },
     webUrl: data.web_url,
   };
 }
