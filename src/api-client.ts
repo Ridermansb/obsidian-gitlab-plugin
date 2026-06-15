@@ -8,12 +8,27 @@ type GitLabAPIClientOptions = {
   clientSecret?: string;
 };
 
+export class GitLabApiError extends Error {
+  status: number;
+  path: string;
+
+  constructor(status: number, path: string) {
+    super(`GitLab API error ${status}: ${path}`);
+    this.status = status;
+    this.path = path;
+  }
+}
+
 export class GitLabAPIClient {
+  private instanceBaseURL: string;
   private baseURL: string;
+  private plugin: Plugin;
   private authService: AuthService | null = null;
 
   constructor(options: GitLabAPIClientOptions) {
+    this.instanceBaseURL = options.baseURL;
     this.baseURL = options.baseURL + "/api";
+    this.plugin = options.plugin;
 
     if (options.clientId) {
       this.authService = new AuthService(
@@ -23,6 +38,32 @@ export class GitLabAPIClient {
         options.clientSecret,
       );
     }
+  }
+
+  private getPatStorageKey(): string {
+    const sanitizedUrl = this.instanceBaseURL
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "-");
+    return `pat-${sanitizedUrl}`;
+  }
+
+  getPat(): string | null {
+    const token = this.plugin.app.secretStorage.getSecret(
+      this.getPatStorageKey(),
+    );
+    return token && token.length > 0 ? token : null;
+  }
+
+  setPat(token: string): void {
+    this.plugin.app.secretStorage.setSecret(this.getPatStorageKey(), token);
+  }
+
+  clearPat(): void {
+    this.plugin.app.secretStorage.setSecret(this.getPatStorageKey(), "");
+  }
+
+  hasPat(): boolean {
+    return this.getPat() !== null;
   }
 
   async authorize() {
@@ -57,6 +98,43 @@ export class GitLabAPIClient {
     await this.authService.logout();
   }
 
+  private async resolveAuthHeaders(): Promise<Record<string, string>> {
+    const pat = this.getPat();
+    if (pat) {
+      return { "PRIVATE-TOKEN": pat };
+    }
+
+    const oauth = await this.getValidToken();
+    if (oauth) {
+      return { Authorization: `Bearer ${oauth}` };
+    }
+
+    return {};
+  }
+
+  private async request<T>(path: string, method = "GET"): Promise<T> {
+    const response = await requestUrl({
+      url: `${this.baseURL}/v4/${path}`,
+      method,
+      headers: {
+        ...(await this.resolveAuthHeaders()),
+        "Content-Type": "application/json",
+      },
+      throw: false,
+    });
+
+    if (response.status >= 400) {
+      throw new GitLabApiError(response.status, path);
+    }
+
+    return response.json as T;
+  }
+
+  async testConnection(): Promise<string> {
+    const user = await this.request<{ username: string }>("user");
+    return user.username;
+  }
+
   /**
    * Get a single project issue.
    *
@@ -66,14 +144,9 @@ export class GitLabAPIClient {
    * @throws
    */
   async getProjectIssue(id: string, issueIid: string) {
-    const url = `${this.baseURL}/v4/projects/${id}/issues/${issueIid}`;
-    const response = await requestUrl({
-      url,
-      method: "GET",
-    });
-
-    let data = (await response.json) as _APIIssue;
-
+    const data = await this.request<_APIIssue>(
+      `projects/${id}/issues/${issueIid}`,
+    );
     return issueMapper(data);
   }
 }

@@ -12,6 +12,26 @@ context.
 2. Paste a supported GitLab URL (issue, merge request, repository, etc.) into a note.
 3. Switch to preview mode to see the embed rendered.
 
+## Authentication
+
+Public GitLab resources work without authentication. For private projects,
+configure one of the following in **Settings → GitLab Embeds**:
+
+### Personal access token (recommended)
+
+1. Go to your GitLab instance → **Preferences → Access Tokens**.
+2. Create a token with the **read_api** scope (or **api**).
+3. Paste the token into the plugin settings for the matching instance.
+4. Click **Test** to verify the connection.
+
+Tokens are stored in Obsidian's secret storage, not in plain settings.
+
+### OAuth (optional)
+
+Configure a GitLab OAuth application with redirect URI `obsidian://gitlab-embeds`,
+then enter the Client ID (and Client Secret if required) and click **Authorize**.
+If both a PAT and OAuth are configured, the PAT is used first.
+
 ## Disclaimer
 
 This plugin makes network requests to configured GitLab instances (e.g.

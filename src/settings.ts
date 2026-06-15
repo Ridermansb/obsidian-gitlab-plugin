@@ -1,4 +1,11 @@
-import { App, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
+import {
+  App,
+  ButtonComponent,
+  Modal,
+  Notice,
+  PluginSettingTab,
+  Setting,
+} from "obsidian";
 import GitLabPlugin from "./main";
 
 export interface GitLabInstance {
@@ -105,6 +112,42 @@ export class GitLabSettingTab extends PluginSettingTab {
       let previousClientSecret = instance.clientSecret;
 
       new Setting(containerEl)
+        .setName(`Personal access token: ${instance.baseUrl}`)
+        .setDesc(
+          "Create at GitLab → Preferences → Access Tokens. Scope: read_api (or api).",
+        )
+        .addText((component) => {
+          component.inputEl.type = "password";
+          component.setPlaceholder(
+            client?.hasPat() ? "Token configured" : "glpat-...",
+          );
+          component.onChange(async (value) => {
+            if (!client) return;
+            const token = value.trim();
+            if (token.length > 0) {
+              client.setPat(token);
+            }
+          });
+        })
+        .addButton((btn) =>
+          btn.setButtonText("Clear").onClick(() => {
+            if (!client) return;
+            client.clearPat();
+            new Notice("Personal access token cleared");
+            this.display();
+          }),
+        );
+
+      new Setting(containerEl)
+        .setName(`Test connection: ${instance.baseUrl}`)
+        .setDesc("Verify hostname and token work.")
+        .addButton((button) => {
+          button.setButtonText("Test").onClick(() => {
+            void this.testConnection(button, client);
+          });
+        });
+
+      new Setting(containerEl)
         .setName(`Client ID: ${instance.baseUrl}`)
         .setDesc(
           "Enter the OAuth client_id from your GitLab application settings",
@@ -201,5 +244,29 @@ export class GitLabSettingTab extends PluginSettingTab {
           });
       }
     });
+  }
+
+  private async testConnection(
+    button: ButtonComponent,
+    client: GitLabPlugin["clients"][string] | undefined,
+  ): Promise<void> {
+    if (!client) {
+      button.setButtonText("No client");
+      window.setTimeout(() => {
+        button.setButtonText("Test");
+      }, 3000);
+      return;
+    }
+
+    button.setButtonText("Testing...");
+    try {
+      const username = await client.testConnection();
+      button.setButtonText(`Connected as ${username}`);
+    } catch {
+      button.setButtonText("Failed - check settings");
+    }
+    window.setTimeout(() => {
+      button.setButtonText("Test");
+    }, 3000);
   }
 }

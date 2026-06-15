@@ -4,7 +4,7 @@ import {
   GitLabPluginSettings,
   GitLabSettingTab,
 } from "./settings";
-import { GitLabAPIClient, Issue } from "./api-client";
+import { GitLabAPIClient, GitLabApiError, Issue } from "./api-client";
 
 enum GitLabResource {
   ISSUE = "issues",
@@ -100,8 +100,23 @@ export default class GitLabPlugin extends Plugin {
 
     switch (url.resource) {
       case GitLabResource.ISSUE: {
-        const issue = await client.getProjectIssue(url.getProjectId(), url.id);
-        this.renderIssueEmbed(embedParentElement, issue);
+        try {
+          const issue = await client.getProjectIssue(
+            url.getProjectId(),
+            url.id,
+          );
+          this.renderIssueEmbed(embedParentElement, issue);
+        } catch (e) {
+          if (
+            e instanceof GitLabApiError &&
+            (e.status === 401 || e.status === 403)
+          ) {
+            new Notice(
+              "GitLab embed: authentication required. Add a PAT or authorize OAuth in settings.",
+              8000,
+            );
+          }
+        }
         break;
       }
       case GitLabResource.MERGE_REQUEST: {
