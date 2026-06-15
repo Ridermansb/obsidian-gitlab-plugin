@@ -9,8 +9,10 @@ context.
 ## Getting Started
 
 1. Install the **Obsidian GitLab Embeds** plugin.
-2. Paste a supported GitLab URL (issue, merge request, repository, etc.) into a note.
-3. Switch to preview mode to see the embed rendered.
+2. Paste a supported GitLab URL (issue or merge request) into a note.
+3. Embeds render automatically in **Reading view** and **Live Preview**. Source mode shows the raw markdown link.
+
+If you use a self-hosted GitLab instance (not gitlab.com), add its base URL under **Settings → GitLab Embeds** (for example `https://gitlab.housecalldev.com`).
 
 ## Authentication
 

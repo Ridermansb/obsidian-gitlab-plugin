@@ -8,6 +8,11 @@
   border: 1px solid var(--background-modifier-border);
 }
 
+.gitlab-embed-loading {
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+}
+
 .gitlab-embed,
 .gitlab-embed:hover,
 .gitlab-embed:active {
