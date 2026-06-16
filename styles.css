@@ -83,3 +83,94 @@
   color: white;
   font-size: var(--font-smallest);
 }
+
+.gitlab-embed-body {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--size-4-4);
+}
+
+.gitlab-embed-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.gitlab-embed-aside {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--size-4-3);
+  max-width: 40%;
+}
+
+.gitlab-status-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--size-4-1);
+  text-align: right;
+  max-width: 100%;
+}
+
+.gitlab-status-block-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--size-4-1);
+}
+
+.gitlab-status-block-emoji {
+  font-size: var(--font-ui-medium);
+  line-height: 1;
+}
+
+.gitlab-status-block-label {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  color: var(--text-normal);
+  line-height: 1;
+}
+
+.gitlab-status-block-meta {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  text-align: right;
+  text-wrap: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.gitlab-status-block--merged .gitlab-status-block-label {
+  color: var(--color-green);
+}
+
+.gitlab-status-block--opened .gitlab-status-block-label {
+  color: var(--color-blue);
+}
+
+.gitlab-status-block--closed .gitlab-status-block-label,
+.gitlab-status-block--locked .gitlab-status-block-label {
+  color: var(--text-muted);
+}
+
+.gitlab-status-block--success .gitlab-status-block-label {
+  color: var(--color-green);
+}
+
+.gitlab-status-block--failed .gitlab-status-block-label {
+  color: var(--color-red);
+}
+
+.gitlab-status-block--running .gitlab-status-block-label,
+.gitlab-status-block--pending .gitlab-status-block-label {
+  color: var(--color-blue);
+}
+
+.gitlab-status-block--canceled .gitlab-status-block-label,
+.gitlab-status-block--cancelled .gitlab-status-block-label,
+.gitlab-status-block--skipped .gitlab-status-block-label {
+  color: var(--text-muted);
+}

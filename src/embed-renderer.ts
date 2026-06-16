@@ -11,6 +11,73 @@ const ellipsize = (str: string, count: number): string => {
   return str.slice(0, count - ellipses.length).trimEnd() + ellipses;
 };
 
+const pipelineStatusEmojis: Record<string, string> = {
+  success: "✅",
+  failed: "❌",
+  running: "🔄",
+  pending: "⏳",
+  canceled: "🚫",
+  cancelled: "🚫",
+  skipped: "⏭️",
+};
+
+const pipelineStatusLabels: Record<string, string> = {
+  success: "Passed",
+  failed: "Failed",
+  running: "Running",
+  pending: "Pending",
+  canceled: "Canceled",
+  cancelled: "Canceled",
+  skipped: "Skipped",
+};
+
+const formatPipelineStatus = (status: string): string => {
+  return pipelineStatusLabels[status] ?? status;
+};
+
+const formatPipelineEmoji = (status: string): string => {
+  return pipelineStatusEmojis[status] ?? "⚙️";
+};
+
+const formatDuration = (seconds: number): string => {
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  if (minutes < 60) {
+    return remainingSeconds > 0
+      ? `${minutes}m ${remainingSeconds}s`
+      : `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+};
+
+const formatPipelineMeta = (
+  pipeline: NonNullable<MergeRequest["headPipeline"]>,
+): string => {
+  const parts: string[] = [];
+
+  if (pipeline.iid !== undefined) {
+    parts.push(`#${pipeline.iid}`);
+  }
+
+  if (pipeline.duration !== undefined) {
+    parts.push(formatDuration(pipeline.duration));
+  }
+
+  if (pipeline.finishedAt) {
+    parts.push(formatDate(pipeline.finishedAt));
+  }
+
+  return parts.join(" · ");
+};
+
 const formatDate = (isoDate: string): string => {
   const date = new Date(isoDate);
   const yyyy = date.getFullYear();
@@ -18,6 +85,80 @@ const formatDate = (isoDate: string): string => {
   const dd = String(date.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 };
+
+const mergeStateEmojis: Record<string, string> = {
+  opened: "🟢",
+  merged: "🔀",
+  closed: "🔒",
+  locked: "🔒",
+};
+
+const mergeStateLabels: Record<string, string> = {
+  opened: "Open",
+  merged: "Merged",
+  closed: "Closed",
+  locked: "Locked",
+};
+
+const formatMergeStateEmoji = (state: string): string => {
+  return mergeStateEmojis[state] ?? "📋";
+};
+
+const formatMergeStateLabel = (state: string): string => {
+  return mergeStateLabels[state] ?? state;
+};
+
+const formatMergeStateMeta = (mergeRequest: MergeRequest): string => {
+  if (mergeRequest.state === "merged" && mergeRequest.mergedAt) {
+    return formatDate(mergeRequest.mergedAt);
+  }
+
+  if (mergeRequest.state === "closed" && mergeRequest.closedAt) {
+    return formatDate(mergeRequest.closedAt);
+  }
+
+  if (mergeRequest.state === "opened") {
+    return formatDate(mergeRequest.createdAt);
+  }
+
+  return "";
+};
+
+function renderStatusBlock(
+  parent: HTMLElement,
+  options: {
+    modifier: string;
+    emoji: string;
+    label: string;
+    meta?: string;
+    title?: string;
+  },
+): void {
+  const block = parent.createDiv({
+    cls: `gitlab-status-block gitlab-status-block--${options.modifier}`,
+  });
+
+  const statusRow = block.createDiv({ cls: "gitlab-status-block-row" });
+  statusRow.createEl("span", {
+    text: options.emoji,
+    cls: "gitlab-status-block-emoji",
+  });
+  statusRow.createEl("span", {
+    text: options.label,
+    cls: "gitlab-status-block-label",
+  });
+
+  if (options.meta) {
+    block.createEl("div", {
+      text: options.meta,
+      cls: "gitlab-status-block-meta",
+    });
+  }
+
+  if (options.title) {
+    block.setAttr("title", options.title);
+  }
+}
 
 function setupEmbedElement(
   embedElement: HTMLElement,
@@ -88,13 +229,16 @@ function populateMergeRequestEmbed(
 ): void {
   setupEmbedElement(embedElement, mergeRequest.webUrl, "gitlab-merge-request");
 
+  const bodyElement = embedElement.createDiv({ cls: "gitlab-embed-body" });
+  const mainElement = bodyElement.createDiv({ cls: "gitlab-embed-main" });
+
   const { group, project } = new GitLabURL(mergeRequest.webUrl, baseUrls);
-  embedElement.createEl("div", {
+  mainElement.createEl("div", {
     text: `${group}/${project}`,
     cls: "gitlab-repo",
   });
 
-  const headingElement = embedElement.createEl("div", {
+  const headingElement = mainElement.createEl("div", {
     cls: "gitlab-heading",
   });
   headingElement.createEl("span", {
@@ -103,7 +247,7 @@ function populateMergeRequestEmbed(
   });
   headingElement.appendText(mergeRequest.title);
 
-  const detailsElement = embedElement.createDiv({ cls: "gitlab-details" });
+  const detailsElement = mainElement.createDiv({ cls: "gitlab-details" });
 
   const authorElement = detailsElement.createEl("div", {
     cls: "gitlab-author",
@@ -134,6 +278,31 @@ function populateMergeRequestEmbed(
       cls: "gitlab-label",
     }),
   );
+
+  const asideElement = bodyElement.createDiv({ cls: "gitlab-embed-aside" });
+
+  renderStatusBlock(asideElement, {
+    modifier: mergeRequest.state,
+    emoji: formatMergeStateEmoji(mergeRequest.state),
+    label: formatMergeStateLabel(mergeRequest.state),
+    meta: formatMergeStateMeta(mergeRequest),
+  });
+
+  if (mergeRequest.headPipeline) {
+    const pipeline = mergeRequest.headPipeline;
+    const { status } = pipeline;
+    const meta = formatPipelineMeta(pipeline);
+
+    renderStatusBlock(asideElement, {
+      modifier: status,
+      emoji: formatPipelineEmoji(status),
+      label: formatPipelineStatus(status),
+      meta: meta || undefined,
+      title: pipeline.webUrl
+        ? `Pipeline ${meta || formatPipelineStatus(status)}`
+        : undefined,
+    });
+  }
 }
 
 export type EmbedData = Issue | MergeRequest;

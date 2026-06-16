@@ -284,6 +284,21 @@ type _APIMergeRequest = {
     web_url: string;
   };
   web_url: string;
+  head_pipeline?: {
+    iid?: number;
+    status: string;
+    web_url?: string;
+    duration?: number | null;
+    finished_at?: string | null;
+  } | null;
+};
+
+export type MergeRequestHeadPipeline = {
+  status: string;
+  iid?: number;
+  webUrl?: string;
+  duration?: number;
+  finishedAt?: string;
 };
 
 export type MergeRequest = {
@@ -311,6 +326,7 @@ export type MergeRequest = {
     webUrl: string;
   };
   webUrl: string;
+  headPipeline?: MergeRequestHeadPipeline;
 };
 
 function mergeRequestMapper(data: _APIMergeRequest): MergeRequest {
@@ -339,5 +355,14 @@ function mergeRequestMapper(data: _APIMergeRequest): MergeRequest {
       webUrl: data.author.web_url,
     },
     webUrl: data.web_url,
+    headPipeline: data.head_pipeline
+      ? {
+          status: data.head_pipeline.status,
+          iid: data.head_pipeline.iid,
+          webUrl: data.head_pipeline.web_url,
+          duration: data.head_pipeline.duration ?? undefined,
+          finishedAt: data.head_pipeline.finished_at ?? undefined,
+        }
+      : undefined,
   };
 }
