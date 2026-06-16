@@ -33,6 +33,8 @@ declare module "@lezer/common" {
     to: number;
     type: { name: string };
     parent: SyntaxNode | null;
+    firstChild: SyntaxNode | null;
+    nextSibling: SyntaxNode | null;
     getChild(name: string): SyntaxNode | null;
   }
 }

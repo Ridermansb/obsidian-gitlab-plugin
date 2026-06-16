@@ -139,6 +139,30 @@ export class GitLabAPIClient {
     return response.json as T;
   }
 
+  private async requestPaginated<T>(
+    path: string,
+    options: { perPage?: number; maxPages?: number } = {},
+  ): Promise<T[]> {
+    const perPage = options.perPage ?? 100;
+    const maxPages = options.maxPages ?? 10;
+    const results: T[] = [];
+
+    for (let page = 1; page <= maxPages; page++) {
+      const separator = path.includes("?") ? "&" : "?";
+      const pagePath = `${path}${separator}per_page=${perPage}&page=${page}`;
+      const pageResults = await this.request<T[]>(pagePath);
+      if (!Array.isArray(pageResults) || pageResults.length === 0) {
+        break;
+      }
+      results.push(...pageResults);
+      if (pageResults.length < perPage) {
+        break;
+      }
+    }
+
+    return results;
+  }
+
   async testConnection(): Promise<string> {
     const user = await this.request<{ username: string }>("user");
     return user.username;
@@ -164,6 +188,13 @@ export class GitLabAPIClient {
       `projects/${id}/merge_requests/${mergeRequestIid}`,
     );
     return mergeRequestMapper(data);
+  }
+
+  async getProjectMergeRequestDiscussions(id: string, mergeRequestIid: string) {
+    const data = await this.requestPaginated<_APIMergeRequestDiscussion>(
+      `projects/${id}/merge_requests/${mergeRequestIid}/discussions`,
+    );
+    return data.map(discussionMapper);
   }
 }
 
@@ -364,5 +395,97 @@ function mergeRequestMapper(data: _APIMergeRequest): MergeRequest {
           finishedAt: data.head_pipeline.finished_at ?? undefined,
         }
       : undefined,
+  };
+}
+
+type _APIDiscussionNotePosition = {
+  new_path?: string;
+  old_path?: string;
+  new_line?: number | null;
+  old_line?: number | null;
+};
+
+type _APIDiscussionNote = {
+  id: number;
+  body: string;
+  system: boolean;
+  created_at: string;
+  resolved?: boolean;
+  resolvable?: boolean;
+  position?: _APIDiscussionNotePosition | null;
+  author: {
+    username: string;
+    avatar_url: string;
+    name: string;
+  };
+};
+
+type _APIMergeRequestDiscussion = {
+  id: string;
+  individual_note: boolean;
+  notes: _APIDiscussionNote[];
+};
+
+export type MergeRequestDiscussionNotePosition = {
+  newPath?: string;
+  oldPath?: string;
+  newLine?: number;
+  oldLine?: number;
+};
+
+export type MergeRequestDiscussionNote = {
+  id: number;
+  body: string;
+  system: boolean;
+  createdAt: string;
+  resolved: boolean;
+  resolvable: boolean;
+  position?: MergeRequestDiscussionNotePosition;
+  author: {
+    username: string;
+    avatarUrl: string;
+    name: string;
+  };
+};
+
+export type MergeRequestDiscussion = {
+  id: string;
+  individualNote: boolean;
+  notes: MergeRequestDiscussionNote[];
+};
+
+function discussionNoteMapper(
+  data: _APIDiscussionNote,
+): MergeRequestDiscussionNote {
+  return {
+    id: data.id,
+    body: data.body,
+    system: data.system,
+    createdAt: data.created_at,
+    resolved: data.resolved ?? false,
+    resolvable: data.resolvable ?? false,
+    position: data.position
+      ? {
+          newPath: data.position.new_path,
+          oldPath: data.position.old_path,
+          newLine: data.position.new_line ?? undefined,
+          oldLine: data.position.old_line ?? undefined,
+        }
+      : undefined,
+    author: {
+      username: data.author.username,
+      avatarUrl: data.author.avatar_url,
+      name: data.author.name,
+    },
+  };
+}
+
+function discussionMapper(
+  data: _APIMergeRequestDiscussion,
+): MergeRequestDiscussion {
+  return {
+    id: data.id,
+    individualNote: data.individual_note,
+    notes: data.notes.map(discussionNoteMapper),
   };
 }

@@ -92,6 +92,10 @@ export async function processAnchorElement(
   host: GitLabEmbedHost,
   anchorElement: HTMLAnchorElement,
 ): Promise<void> {
+  if (anchorElement.closest("pre, code")) {
+    return;
+  }
+
   const baseUrls = getBaseUrls(host);
   const url = parseGitLabUrl(anchorElement.href, baseUrls);
   if (!url) return;
@@ -111,9 +115,19 @@ export function looksLikeGitLabEmbedUrl(href: string): boolean {
   return matchGitLabEmbedPath(href) !== null;
 }
 
-export function getUnconfiguredInstanceMessage(href: string): string | null {
+export function getUnconfiguredInstanceMessage(
+  href: string,
+  baseUrls: string[],
+): string | null {
+  if (parseGitLabUrl(href, baseUrls)) {
+    return null;
+  }
+
   const baseUrl = matchGitLabEmbedPath(href);
-  if (!baseUrl) return null;
+  if (!baseUrl) {
+    return null;
+  }
+
   return `Add ${baseUrl} in Settings → GitLab Embeds.`;
 }
 

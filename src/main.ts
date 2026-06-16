@@ -7,6 +7,8 @@ import {
   normalizeBaseUrl,
 } from "./settings";
 import { GitLabAPIClient } from "./api-client";
+import { processMrDiscussCodeBlock } from "./discuss-block-processor";
+import { clearDiscussCache } from "./discuss-service";
 import { clearEmbedCache, processAnchorElement } from "./embed-service";
 import { createGitLabLivePreviewExtension } from "./live-preview-extension";
 
@@ -46,6 +48,13 @@ export default class GitLabPlugin extends Plugin {
         ),
       );
     });
+
+    this.registerMarkdownCodeBlockProcessor(
+      "gitlab-mr-discuss",
+      async (source, el) => {
+        await processMrDiscussCodeBlock(this, source, el);
+      },
+    );
 
     this.registerEditorExtension(createGitLabLivePreviewExtension(this));
   }
@@ -88,6 +97,7 @@ export default class GitLabPlugin extends Plugin {
 
   reloadClients() {
     clearEmbedCache();
+    clearDiscussCache();
     this.clients = {};
     this.settings.instances.forEach(
       (instance) =>
